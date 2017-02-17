@@ -163,20 +163,20 @@ end_ad_processing ( vlib_node_runtime_t * node,
     next_ext_header = ip6_ext_next_header (next_ext_header);
   }
 
+  /* Make sure next header is IP */
+  if (PREDICT_FALSE (next_hdr != IP_PROTOCOL_IPV6))
+  {
+    *next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
+    b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_INNER_IP];
+    return;
+  }
+
   /* Retrieve SID memory */
   ls0_mem = ls0->plugin_mem;
 
   /* Cache IP header and extensions */
   vec_validate (ls0_mem->rewrite, total_size-1);
   clib_memcpy (ls0_mem->rewrite, ip0, total_size);
-
-  /* Make sure next header is IP */
-  //if (PREDICT_FALSE (next_hdr != IP_PROTOCOL_IPV6))
-  //{
-  //    *next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
-  //    b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_INNER_IP];
-  //    return;
-  //}
 
   /* Remove IP header and extensions */
   vlib_buffer_advance (b0, total_size);
