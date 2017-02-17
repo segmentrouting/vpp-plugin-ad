@@ -45,7 +45,7 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
 
   /* Retrieve the adjacency corresponding to the (OIF, next_hop) */
   adj_index_t nh_adj_index = adj_nbr_add_or_lock (FIB_PROTOCOL_IP6,
-      VNET_LINK_ETHERNET, &ls_mem->nh_addr, ls_mem->sw_if_index_out);
+      VNET_LINK_IP6, &ls_mem->nh_addr, ls_mem->sw_if_index_out);
   if(nh_adj_index == ADJ_INDEX_INVALID)
     return -5;
 
