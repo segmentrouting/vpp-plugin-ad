@@ -159,8 +159,8 @@ end_ad_processing ( vlib_node_runtime_t * node,
   while (ip6_ext_hdr (next_hdr))
   {
     total_size += ip6_ext_header_len (next_ext_header);
-    next_ext_header = ip6_ext_next_header (next_ext_header);
     next_hdr = next_ext_header->next_hdr;
+    next_ext_header = ip6_ext_next_header (next_ext_header);
   }
 
   /* Retrieve SID memory */
