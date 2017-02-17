@@ -64,7 +64,7 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return -3;
 
-  int ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad-rewrite", // FIXME L2
+  int ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad-rewrite",
       ls_mem->sw_if_index_in, 1, 0, 0);
   if (ret != 0)
     return -1;
