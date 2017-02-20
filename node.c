@@ -67,7 +67,7 @@ _(NO_INNER_IP, "(Error) No inner IP header.")
 
 #define foreach_srv6_ad_rewrite_counter \
 _(PROCESSED, "srv6-ad rewriten packets") \
-_(NO_SRH, "(Error) No SRH.")
+_(NO_RW, "(Error) No header for rewriting.")
 
 typedef enum {
 #define _(sym,str) SRV6_AD_LOCALSID_COUNTER_##sym,
@@ -317,23 +317,34 @@ srv6_ad_rewrite (vlib_main_t * vm, vlib_node_runtime_t * node,
       n_left_to_next -= 1;
       b0 = vlib_get_buffer (vm, bi0);
 
+      ip0 = vlib_buffer_get_current (b0);
       ls0 = sm->sw_iface_localsid[vnet_buffer(b0)->sw_if_index[VLIB_RX]];
       ls0_mem = ls0->plugin_mem;
 
-      ASSERT (VLIB_BUFFER_PRE_DATA_SIZE >= (vec_len(ls0_mem->rewrite) + b0->current_data));
+      if (PREDICT_FALSE (ls0_mem->rewrite == NULL))
+      {
+        next0 = SRV6_AD_REWRITE_NEXT_ERROR;
+        b0->error = node->errors[SRV6_AD_REWRITE_COUNTER_NO_RW];
+      }
+      else
+      {
+        ASSERT (VLIB_BUFFER_PRE_DATA_SIZE >= (vec_len(ls0_mem->rewrite) +
+              b0->current_data));
 
-      ip0 = vlib_buffer_get_current (b0);
+        clib_memcpy (((u8 *)ip0) - vec_len(ls0_mem->rewrite), ls0_mem->rewrite,
+            vec_len(ls0_mem->rewrite));
+        vlib_buffer_advance(b0, - (word) vec_len(ls0_mem->rewrite));
 
-      clib_memcpy (((u8 *)ip0) - vec_len(ls0_mem->rewrite), ls0_mem->rewrite, vec_len(ls0_mem->rewrite));
-      vlib_buffer_advance(b0, - (word) vec_len(ls0_mem->rewrite));
+        ip0_encap = ip0;
+        ip0 = vlib_buffer_get_current (b0);
 
-      ip0_encap = ip0;
-      ip0 = vlib_buffer_get_current (b0);
-
-      ip0_encap->hop_limit -= 1;
-      new_l0 = ip0->payload_length + sizeof(ip6_header_t) + clib_net_to_host_u16(ip0_encap->payload_length);
-      ip0->payload_length = clib_host_to_net_u16(new_l0);
-      ip0->ip_version_traffic_class_and_flow_label = ip0_encap->ip_version_traffic_class_and_flow_label;
+        ip0_encap->hop_limit -= 1;
+        new_l0 = ip0->payload_length + sizeof(ip6_header_t) + \
+          clib_net_to_host_u16(ip0_encap->payload_length);
+        ip0->payload_length = clib_host_to_net_u16(new_l0);
+        ip0->ip_version_traffic_class_and_flow_label = \
+          ip0_encap->ip_version_traffic_class_and_flow_label;
+      }
 
       if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
           PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED) )
