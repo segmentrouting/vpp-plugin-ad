@@ -88,14 +88,22 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
 static int
 srv6_ad_localsid_removal_fn (ip6_sr_localsid_t *localsid)
 {
-  /* Do you want to do anything fancy upon localsid removal?
-   * You can do it here
-   */
-  /*
-   * BTW if you stored something in localsid->plugin_mem you should clean it now
-   */
+  srv6_ad_main_t * sm = &srv6_ad_main;
+  srv6_ad_localsid_t *ls_mem = localsid->plugin_mem;
 
-  //In this example we are only cleaning the memory allocated per localsid
+  /* Remove hardware indirection (from sr_steering.c:137) */
+  int ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad-rewrite",
+      ls_mem->sw_if_index_in, 0, 0, 0);
+  if (ret != 0)
+    return -1;
+
+  /* Remove local SID pointer from interface table (from sr_steering.c:139) */
+  sm->sw_iface_localsid[ls_mem->sw_if_index_in] = NULL;
+
+  /* Unlock (OIF, NHOP) adjacency (from sr_localsid.c:103) */
+  adj_unlock (ls_mem->nh_adj);
+
+  /* Clean up local SID memory */
   clib_mem_free(localsid->plugin_mem);
 
   return 0;
