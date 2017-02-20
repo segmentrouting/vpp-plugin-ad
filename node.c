@@ -53,7 +53,6 @@ format_srv6_ad_rewrite_trace (u8 * s, va_list * args)
 
 /***************************** Nodes registration *****************************/
 
-vlib_node_registration_t srv6_localsid_sample_node;
 vlib_node_registration_t srv6_ad_rewrite_node;
 
 
@@ -66,7 +65,7 @@ _(LAST_SID, "(Error) Last SID.") \
 _(NO_INNER_IP, "(Error) No inner IP header.")
 
 #define foreach_srv6_ad_rewrite_counter \
-_(PROCESSED, "srv6-ad rewriten packets") \
+_(PROCESSED, "srv6-ad rewritten packets") \
 _(NO_RW, "(Error) No header for rewriting.")
 
 typedef enum {
@@ -189,13 +188,13 @@ end_ad_processing ( vlib_node_runtime_t * node,
  * @brief SRv6 AD Localsid graph node
  */
 static uword
-srv6_ad_localsid_fn (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t * frame)
+srv6_ad_localsid_fn ( vlib_main_t * vm,
+    vlib_node_runtime_t * node,
+    vlib_frame_t * frame)
 {
-  u32 n_left_from, * from, * to_next;
-  u32 next_index;
-  u32 pkts_swapped = 0;
-
   ip6_sr_main_t * sm = &sr_main;
+  u32 n_left_from, next_index, * from, * to_next;
+  u32 cnt_packets = 0;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -205,8 +204,7 @@ srv6_ad_localsid_fn (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t 
   {
     u32 n_left_to_next;
 
-    vlib_get_next_frame (vm, node, next_index,
-            to_next, n_left_to_next);
+    vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
 
     /* TODO: Dual/quad loop */
 
@@ -216,8 +214,8 @@ srv6_ad_localsid_fn (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t 
       vlib_buffer_t * b0;
       ip6_header_t * ip0 = 0;
       ip6_sr_header_t * sr0;
-      u32 next0 = SRV6_AD_LOCALSID_NEXT_IP6REWRITE;
       ip6_sr_localsid_t *ls0;
+      u32 next0 = SRV6_AD_LOCALSID_NEXT_IP6REWRITE;
 
       bi0 = from[0];
       to_next[0] = bi0;
@@ -231,28 +229,29 @@ srv6_ad_localsid_fn (vlib_main_t * vm, vlib_node_runtime_t * node, vlib_frame_t 
       sr0 = (ip6_sr_header_t *)(ip0+1);
 
       /* Lookup the SR End behavior based on IP DA (adj) */
-      ls0 = pool_elt_at_index (sm->localsids, vnet_buffer(b0)->ip.adj_index[VLIB_TX]);
+      ls0 = pool_elt_at_index (sm->localsids,
+          vnet_buffer(b0)->ip.adj_index[VLIB_TX]);
 
       /* SRH processing */
       end_ad_processing (node, b0, ip0, sr0, ls0, &next0);
 
       if (PREDICT_FALSE(b0->flags & VLIB_BUFFER_IS_TRACED))
       {
-        srv6_ad_localsid_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof (*tr));
+        srv6_ad_localsid_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof *tr);
         tr->localsid_index = ls0 - sm->localsids;
       }
 
       vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
         n_left_to_next, bi0, next0);
 
-      pkts_swapped ++;
+      cnt_packets ++;
     }
-    vlib_put_next_frame (vm, node, next_index, n_left_to_next);
 
+    vlib_put_next_frame (vm, node, next_index, n_left_to_next);
   }
 
-  vlib_node_increment_counter (vm, srv6_localsid_sample_node.index,
-                               SRV6_AD_LOCALSID_COUNTER_PROCESSED, pkts_swapped);
+  vlib_node_increment_counter (vm, srv6_ad_localsid_node.index,
+                               SRV6_AD_LOCALSID_COUNTER_PROCESSED, cnt_packets);
   return frame->n_vectors;
 }
 
@@ -280,24 +279,25 @@ VLIB_REGISTER_NODE (srv6_ad_localsid_node) = {
  * @brief Graph node for applying a SR policy into an IPv6 packet. Encapsulation
  */
 static uword
-srv6_ad_rewrite (vlib_main_t * vm, vlib_node_runtime_t * node,
-  vlib_frame_t * from_frame)
+srv6_ad_rewrite_fn ( vlib_main_t * vm,
+    vlib_node_runtime_t * node,
+    vlib_frame_t * frame)
 {
   srv6_ad_main_t * sm = &srv6_ad_main;
   u32 n_left_from, next_index, * from, * to_next;
+  u32 cnt_packets = 0;
 
-  from = vlib_frame_vector_args (from_frame);
-  n_left_from = from_frame->n_vectors;
-
+  from = vlib_frame_vector_args (frame);
+  n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
-
-  int encap_pkts=0;
 
   while (n_left_from > 0)
   {
     u32 n_left_to_next;
 
     vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
+
+    /* TODO: Dual/quad loop */
 
     while (n_left_from > 0 && n_left_to_next > 0)
     {
@@ -315,8 +315,8 @@ srv6_ad_rewrite (vlib_main_t * vm, vlib_node_runtime_t * node,
       to_next += 1;
       n_left_from -= 1;
       n_left_to_next -= 1;
-      b0 = vlib_get_buffer (vm, bi0);
 
+      b0 = vlib_get_buffer (vm, bi0);
       ip0 = vlib_buffer_get_current (b0);
       ls0 = sm->sw_iface_localsid[vnet_buffer(b0)->sw_if_index[VLIB_RX]];
       ls0_mem = ls0->plugin_mem;
@@ -349,14 +349,15 @@ srv6_ad_rewrite (vlib_main_t * vm, vlib_node_runtime_t * node,
       if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
           PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED) )
       {
-        srv6_ad_rewrite_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof (*tr));
-        clib_memcpy (tr->src.as_u8, ip0->src_address.as_u8, sizeof (tr->src.as_u8));
-        clib_memcpy (tr->dst.as_u8, ip0->dst_address.as_u8, sizeof (tr->dst.as_u8));
+        srv6_ad_rewrite_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof *tr);
+        clib_memcpy (tr->src.as_u8, ip0->src_address.as_u8, sizeof tr->src.as_u8);
+        clib_memcpy (tr->dst.as_u8, ip0->dst_address.as_u8, sizeof tr->dst.as_u8);
       }
 
-      encap_pkts ++;
       vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
         n_left_to_next, bi0, next0);
+
+      cnt_packets ++;
     }
 
     vlib_put_next_frame (vm, node, next_index, n_left_to_next);
@@ -364,14 +365,14 @@ srv6_ad_rewrite (vlib_main_t * vm, vlib_node_runtime_t * node,
 
   /* Update counters */
   vlib_node_increment_counter (vm, srv6_ad_rewrite_node.index,
-                               SRV6_AD_REWRITE_COUNTER_PROCESSED, encap_pkts);
+                               SRV6_AD_REWRITE_COUNTER_PROCESSED, cnt_packets);
 
-  return from_frame->n_vectors;
+  return frame->n_vectors;
 }
 
 /* *INDENT-OFF* */
 VLIB_REGISTER_NODE (srv6_ad_rewrite_node) = {
-  .function = srv6_ad_rewrite,
+  .function = srv6_ad_rewrite_fn,
   .name = "srv6-ad-rewrite",
   .vector_size = sizeof (u32),
   .format_trace = format_srv6_ad_rewrite_trace,

@@ -26,21 +26,16 @@
 
 
 typedef struct {
-	u32 sw_if_index;			      /**< [key] Incoming software interface */
-	dpo_id_t dpo;			          /**< SR Policy specific DPO */
-} srv6_ad_policy_t;
+  u16 msg_id_base;                        /**< API message ID base */
 
-typedef struct {
-  u16 msg_id_base;            /**< API message ID base */
+  vlib_main_t * vlib_main;                /**< [convenience] vlib main */
+  vnet_main_t * vnet_main;                /**< [convenience] vnet main */
 
-  vlib_main_t * vlib_main;    /**< [convenience] vlib main */
-  vnet_main_t * vnet_main;    /**< [convenience] vnet main */
+  dpo_type_t srv6_ad_dpo_type;            /**< DPO type */
 
-  dpo_type_t srv6_ad_dpo_type; /**< DPO type */
+  u32 srv6_localsid_behavior_id;          /**< SRv6 LocalSID behavior number */
 
-  u32 srv6_localsid_behavior_id;  /**< SRv6 LocalSID behavior number */
-
-	ip6_sr_localsid_t **sw_iface_localsid;    /**< L2 steering ifaces - sr_policies */
+  ip6_sr_localsid_t **sw_iface_localsid;	/**< Retrieve local SID from iface */
 } srv6_ad_main_t;
 
 /*
@@ -48,12 +43,12 @@ typedef struct {
  * the user instantiates
  */
 typedef struct {
-	ip46_address_t	nh_addr;		/**< Proxied device address */
-	u32				sw_if_index_out;	/**< Outgoing iface to proxied device */
-	u32				nh_adj;				    /**< Adjacency index for out. iface */
+  ip46_address_t	nh_addr;	              /**< Proxied device address */
+  u32				sw_if_index_out;	            /**< Outgoing iface to proxied dev. */
+  u32				nh_adj;				                /**< Adjacency index for out. iface */
 
-	u32				sw_if_index_in;		/**< Incoming iface from proxied dev. */
-	u8 *			rewrite;			    /**< Precomputer rewrite header */
+  u32				sw_if_index_in;		            /**< Incoming iface from proxied dev. */
+  u8 *			rewrite;			                /**< Headers to be rewritten */
 } srv6_ad_localsid_t ;
 
 srv6_ad_main_t srv6_ad_main;
