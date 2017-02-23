@@ -200,6 +200,8 @@ srv6_ad_localsid_fn ( vlib_main_t * vm,
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
 
+  u32 cpu_index = os_get_cpu_number();
+
   while (n_left_from > 0)
   {
     u32 n_left_to_next;
@@ -240,6 +242,13 @@ srv6_ad_localsid_fn ( vlib_main_t * vm,
         srv6_ad_localsid_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof *tr);
         tr->localsid_index = ls0 - sm->localsids;
       }
+
+      /* This increments the SRv6 per LocalSID counters.*/
+      vlib_increment_combined_counter (
+          ((next0 == SRV6_AD_LOCALSID_NEXT_ERROR) ?
+           &(sm->sr_ls_invalid_counters) : &(sm->sr_ls_valid_counters)),
+          cpu_index, ls0 - sm->localsids, 1,
+          vlib_buffer_length_in_chain (vm, b0));
 
       vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
         n_left_to_next, bi0, next0);
