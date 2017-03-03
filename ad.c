@@ -152,7 +152,7 @@ unformat_srv6_ad_localsid (unformat_input_t * input, va_list * args)
   u32 sw_if_index_out;
   u32 sw_if_index_in;
 
-  if (unformat (input, "AD %U %U %U",
+  if (unformat (input, "end.ad %U %U %U",
         unformat_ip6_address, &nh_addr.ip6,
         unformat_vnet_sw_interface, vnm, &sw_if_index_out,
         unformat_vnet_sw_interface, vnm, &sw_if_index_in))
