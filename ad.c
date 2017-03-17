@@ -44,8 +44,13 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
   /* Step 1: Prepare xconnect adjacency for sending packets to the VNF */
 
   /* Retrieve the adjacency corresponding to the (OIF, next_hop) */
-  adj_index_t nh_adj_index = adj_nbr_add_or_lock (FIB_PROTOCOL_IP6,
-      VNET_LINK_IP6, &ls_mem->nh_addr, ls_mem->sw_if_index_out);
+  adj_index_t nh_adj_index = ADJ_INDEX_INVALID;
+  if (ls_mem->ip_version == DA_IP4)
+    nh_adj_index = adj_nbr_add_or_lock (FIB_PROTOCOL_IP4,
+        VNET_LINK_IP4, &ls_mem->nh_addr, ls_mem->sw_if_index_out);
+  else if (ls_mem->ip_version == DA_IP6)
+    nh_adj_index = adj_nbr_add_or_lock (FIB_PROTOCOL_IP6,
+        VNET_LINK_IP6, &ls_mem->nh_addr, ls_mem->sw_if_index_out);
   if(nh_adj_index == ADJ_INDEX_INVALID)
     return -5;
 
@@ -64,8 +69,13 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return -3;
 
-  int ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad-rewrite",
-      ls_mem->sw_if_index_in, 1, 0, 0);
+  int ret = -1;
+  if (ls_mem->ip_version == DA_IP4)
+    ret = vnet_feature_enable_disable ("ip4-unicast", "srv6-ad4-rewrite",
+        ls_mem->sw_if_index_in, 1, 0, 0);
+  else if (ls_mem->ip_version == DA_IP6)
+    ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad6-rewrite",
+        ls_mem->sw_if_index_in, 1, 0, 0);
   if (ret != 0)
     return -1;
 
@@ -92,8 +102,13 @@ srv6_ad_localsid_removal_fn (ip6_sr_localsid_t *localsid)
   srv6_ad_localsid_t *ls_mem = localsid->plugin_mem;
 
   /* Remove hardware indirection (from sr_steering.c:137) */
-  int ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad-rewrite",
-      ls_mem->sw_if_index_in, 0, 0, 0);
+  int ret = -1;
+  if (ls_mem->ip_version == DA_IP4)
+    ret = vnet_feature_enable_disable ("ip4-unicast", "srv6-ad4-rewrite",
+        ls_mem->sw_if_index_in, 0, 0, 0);
+  else if (ls_mem->ip_version == DA_IP6)
+    ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad6-rewrite",
+        ls_mem->sw_if_index_in, 0, 0, 0);
   if (ret != 0)
     return -1;
 
@@ -124,13 +139,28 @@ format_srv6_ad_localsid (u8 * s, va_list * args)
 
   /* TODO: also print currently registered IP + SR information */
 
-  return (format (s,
-        "Next-hop: %U\n"
-        "\tOutgoing iface: %U\n"
-        "\tIncoming iface: %U",
-        format_ip6_address, &ls_mem->nh_addr.ip6,
-        format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_out,
-        format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_in));
+  if (ls_mem->ip_version == DA_IP4)
+  {
+    return (format (s,
+          "Adj index:\t%u\n"
+          "Next-hop:\t%U\n"
+          "\tOutgoing iface: %U\n"
+          "\tIncoming iface: %U",
+          ls_mem->nh_adj,
+          format_ip4_address, &ls_mem->nh_addr.ip4,
+          format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_out,
+          format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_in));
+  }
+  else
+  {
+    return (format (s,
+          "Next-hop:\t%U\n"
+          "\tOutgoing iface: %U\n"
+          "\tIncoming iface: %U",
+          format_ip6_address, &ls_mem->nh_addr.ip6,
+          format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_out,
+          format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_in));
+  }
 }
 
 /*
@@ -153,6 +183,27 @@ unformat_srv6_ad_localsid (unformat_input_t * input, va_list * args)
   u32 sw_if_index_in;
 
   if (unformat (input, "end.ad %U %U %U",
+        unformat_ip4_address, &nh_addr.ip4,
+        unformat_vnet_sw_interface, vnm, &sw_if_index_out,
+        unformat_vnet_sw_interface, vnm, &sw_if_index_in))
+  {
+    /* Allocate a portion of memory */
+    ls_mem = clib_mem_alloc_aligned_at_offset (sizeof *ls_mem, 0, 0, 1);
+
+    /* Set to zero the memory */
+    memset (ls_mem, 0, sizeof *ls_mem);
+
+    /* Our brand-new car is ready */
+    ls_mem->ip_version = DA_IP4;
+    clib_memcpy (&ls_mem->nh_addr.ip4, &nh_addr.ip4, sizeof (ip4_address_t));
+    ls_mem->sw_if_index_out = sw_if_index_out;
+    ls_mem->sw_if_index_in = sw_if_index_in;
+
+    /* Dont forget to add it to the localsid */
+    *plugin_mem_p = ls_mem;
+    return 1;
+  }
+  else if (unformat (input, "end.ad %U %U %U",
         unformat_ip6_address, &nh_addr.ip6,
         unformat_vnet_sw_interface, vnm, &sw_if_index_out,
         unformat_vnet_sw_interface, vnm, &sw_if_index_in))
@@ -164,7 +215,8 @@ unformat_srv6_ad_localsid (unformat_input_t * input, va_list * args)
     memset (ls_mem, 0, sizeof *ls_mem);
 
     /* Our brand-new car is ready */
-    ls_mem->nh_addr = nh_addr;
+    ls_mem->ip_version = DA_IP6;
+    clib_memcpy (&ls_mem->nh_addr.ip6, &nh_addr.ip6, sizeof (ip6_address_t));
     ls_mem->sw_if_index_out = sw_if_index_out;
     ls_mem->sw_if_index_in = sw_if_index_in;
 
@@ -243,10 +295,17 @@ srv6_ad_init (vlib_main_t * vm)
   return 0;
 }
 
-VNET_FEATURE_INIT (srv6_ad_rewrite, static) =
+VNET_FEATURE_INIT (srv6_ad4_rewrite, static) =
+{
+  .arc_name = "ip4-unicast",
+  .node_name = "srv6-ad4-rewrite",
+  .runs_before = 0,
+};
+
+VNET_FEATURE_INIT (srv6_ad6_rewrite, static) =
 {
   .arc_name = "ip6-unicast",
-  .node_name = "srv6-ad-rewrite",
+  .node_name = "srv6-ad6-rewrite",
   .runs_before = 0,
 };
 

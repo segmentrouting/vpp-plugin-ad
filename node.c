@@ -53,7 +53,8 @@ format_srv6_ad_rewrite_trace (u8 * s, va_list * args)
 
 /***************************** Nodes registration *****************************/
 
-vlib_node_registration_t srv6_ad_rewrite_node;
+vlib_node_registration_t srv6_ad4_rewrite_node;
+vlib_node_registration_t srv6_ad6_rewrite_node;
 
 
 /****************************** Packet counters *******************************/
@@ -99,13 +100,14 @@ static char * srv6_ad_rewrite_counter_strings[] = {
 
 typedef enum {
   SRV6_AD_LOCALSID_NEXT_ERROR,
-  SRV6_AD_LOCALSID_NEXT_IP6REWRITE,
+  SRV6_AD_LOCALSID_NEXT_REWRITE4,
+  SRV6_AD_LOCALSID_NEXT_REWRITE6,
   SRV6_AD_LOCALSID_N_NEXT,
 } srv6_ad_localsid_next_t;
 
 typedef enum {
   SRV6_AD_REWRITE_NEXT_ERROR,
-  SRV6_AD_REWRITE_NEXT_IP6LOOKUP,
+  SRV6_AD_REWRITE_NEXT_LOOKUP,
   SRV6_AD_REWRITE_N_NEXT,
 } srv6_ad_rewrite_next_t;
 
@@ -132,14 +134,12 @@ end_ad_processing ( vlib_node_runtime_t * node,
   if(PREDICT_FALSE(ip0->protocol != IP_PROTOCOL_IPV6_ROUTE ||
         sr0->type != ROUTING_HEADER_TYPE_SR))
   {
-    *next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
     b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_SRH];
     return;
   }
 
   if(PREDICT_FALSE(sr0->segments_left == 0))
   {
-    *next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
     b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_LAST_SID];
     return;
   }
@@ -163,9 +163,8 @@ end_ad_processing ( vlib_node_runtime_t * node,
   }
 
   /* Make sure next header is IP */
-  if (PREDICT_FALSE (next_hdr != IP_PROTOCOL_IPV6))
+  if (PREDICT_FALSE (next_hdr != IP_PROTOCOL_IPV6 && next_hdr != IP_PROTOCOL_IP_IN_IP))
   {
-    *next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
     b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_INNER_IP];
     return;
   }
@@ -182,6 +181,11 @@ end_ad_processing ( vlib_node_runtime_t * node,
 
   /* Set Xconnect adjacency to VNF */
   vnet_buffer(b0)->ip.adj_index[VLIB_TX] = ls0_mem->nh_adj;
+
+  if (ls0_mem->ip_version == DA_IP4)
+    *next0 = SRV6_AD_LOCALSID_NEXT_REWRITE4;
+  else if (ls0_mem->ip_version == DA_IP6)
+    *next0 = SRV6_AD_LOCALSID_NEXT_REWRITE6;
 }
 
 /**
@@ -217,7 +221,7 @@ srv6_ad_localsid_fn ( vlib_main_t * vm,
       ip6_header_t * ip0 = 0;
       ip6_sr_header_t * sr0;
       ip6_sr_localsid_t *ls0;
-      u32 next0 = SRV6_AD_LOCALSID_NEXT_IP6REWRITE;
+      u32 next0 = SRV6_AD_LOCALSID_NEXT_ERROR;
 
       bi0 = from[0];
       to_next[0] = bi0;
@@ -275,7 +279,8 @@ VLIB_REGISTER_NODE (srv6_ad_localsid_node) = {
   .error_strings = srv6_ad_localsid_counter_strings,
   .n_next_nodes = SRV6_AD_LOCALSID_N_NEXT,
   .next_nodes = {
-    [SRV6_AD_LOCALSID_NEXT_IP6REWRITE] = "ip6-rewrite",
+    [SRV6_AD_LOCALSID_NEXT_REWRITE4] = "ip4-rewrite",
+    [SRV6_AD_LOCALSID_NEXT_REWRITE6] = "ip6-rewrite",
     [SRV6_AD_LOCALSID_NEXT_ERROR] = "error-drop",
   },
 };
@@ -288,7 +293,124 @@ VLIB_REGISTER_NODE (srv6_ad_localsid_node) = {
  * @brief Graph node for applying a SR policy into an IPv6 packet. Encapsulation
  */
 static uword
-srv6_ad_rewrite_fn ( vlib_main_t * vm,
+srv6_ad4_rewrite_fn ( vlib_main_t * vm,
+    vlib_node_runtime_t * node,
+    vlib_frame_t * frame)
+{
+  srv6_ad_main_t * sm = &srv6_ad_main;
+  u32 n_left_from, next_index, * from, * to_next;
+  u32 cnt_packets = 0;
+
+  from = vlib_frame_vector_args (frame);
+  n_left_from = frame->n_vectors;
+  next_index = node->cached_next_index;
+
+  while (n_left_from > 0)
+  {
+    u32 n_left_to_next;
+
+    vlib_get_next_frame (vm, node, next_index, to_next, n_left_to_next);
+
+    /* TODO: Dual/quad loop */
+
+    while (n_left_from > 0 && n_left_to_next > 0)
+    {
+      u32 bi0;
+      vlib_buffer_t * b0;
+      ip4_header_t * ip0_encap = 0;
+      ip6_header_t * ip0 = 0;
+      ip6_sr_localsid_t *ls0;
+      srv6_ad_localsid_t *ls0_mem;
+      u32 next0 = SRV6_AD_REWRITE_NEXT_LOOKUP;
+      u16 new_l0 = 0;
+
+      bi0 = from[0];
+      to_next[0] = bi0;
+      from += 1;
+      to_next += 1;
+      n_left_from -= 1;
+      n_left_to_next -= 1;
+
+      b0 = vlib_get_buffer (vm, bi0);
+      ip0_encap = vlib_buffer_get_current (b0);
+      ls0 = sm->sw_iface_localsid[vnet_buffer(b0)->sw_if_index[VLIB_RX]];
+      ls0_mem = ls0->plugin_mem;
+
+      if (PREDICT_FALSE (ls0_mem->rewrite == NULL))
+      {
+        next0 = SRV6_AD_REWRITE_NEXT_ERROR;
+        b0->error = node->errors[SRV6_AD_REWRITE_COUNTER_NO_RW];
+      }
+      else
+      {
+        ASSERT (VLIB_BUFFER_PRE_DATA_SIZE >= (vec_len(ls0_mem->rewrite) +
+              b0->current_data));
+
+        clib_memcpy (((u8 *)ip0_encap) - vec_len(ls0_mem->rewrite),
+            ls0_mem->rewrite, vec_len(ls0_mem->rewrite));
+        vlib_buffer_advance(b0, - (word) vec_len(ls0_mem->rewrite));
+
+        ip0 = vlib_buffer_get_current (b0);
+
+        /* Update inner IPv4 TTL and checksum */
+        u32 checksum0;
+        ip0_encap->ttl -= 1;
+        checksum0 = ip0_encap->checksum + clib_host_to_net_u16 (0x0100);
+        checksum0 += checksum0 >= 0xffff;
+        ip0_encap->checksum = checksum0;
+
+        /* Update outer IPv6 length (in case it has changed) */
+        new_l0 = ip0->payload_length + clib_net_to_host_u16(ip0_encap->length);
+        ip0->payload_length = clib_host_to_net_u16(new_l0);
+      }
+
+      if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
+          PREDICT_FALSE (b0->flags & VLIB_BUFFER_IS_TRACED) )
+      {
+        srv6_ad_rewrite_trace_t *tr = vlib_add_trace (vm, node, b0, sizeof *tr);
+        clib_memcpy (tr->src.as_u8, ip0->src_address.as_u8, sizeof tr->src.as_u8);
+        clib_memcpy (tr->dst.as_u8, ip0->dst_address.as_u8, sizeof tr->dst.as_u8);
+      }
+
+      vlib_validate_buffer_enqueue_x1 (vm, node, next_index, to_next,
+        n_left_to_next, bi0, next0);
+
+      cnt_packets ++;
+    }
+
+    vlib_put_next_frame (vm, node, next_index, n_left_to_next);
+  }
+
+  /* Update counters */
+  vlib_node_increment_counter (vm, srv6_ad4_rewrite_node.index,
+                               SRV6_AD_REWRITE_COUNTER_PROCESSED, cnt_packets);
+
+  return frame->n_vectors;
+}
+
+/* *INDENT-OFF* */
+VLIB_REGISTER_NODE (srv6_ad4_rewrite_node) = {
+  .function = srv6_ad4_rewrite_fn,
+  .name = "srv6-ad4-rewrite",
+  .vector_size = sizeof (u32),
+  .format_trace = format_srv6_ad_rewrite_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+  .n_errors = SRV6_AD_REWRITE_N_COUNTERS,
+  .error_strings = srv6_ad_rewrite_counter_strings,
+  .n_next_nodes = SRV6_AD_REWRITE_N_NEXT,
+  .next_nodes = {
+      [SRV6_AD_REWRITE_NEXT_LOOKUP] = "ip6-lookup",
+      [SRV6_AD_REWRITE_NEXT_ERROR] = "error-drop",
+  },
+};
+/* *INDENT-ON* */
+
+
+/**
+ * @brief Graph node for applying a SR policy into an IPv6 packet. Encapsulation
+ */
+static uword
+srv6_ad6_rewrite_fn ( vlib_main_t * vm,
     vlib_node_runtime_t * node,
     vlib_frame_t * frame)
 {
@@ -315,7 +437,7 @@ srv6_ad_rewrite_fn ( vlib_main_t * vm,
       ip6_header_t * ip0 = 0, *ip0_encap = 0;
       ip6_sr_localsid_t *ls0;
       srv6_ad_localsid_t *ls0_mem;
-      u32 next0 = SRV6_AD_REWRITE_NEXT_IP6LOOKUP;
+      u32 next0 = SRV6_AD_REWRITE_NEXT_LOOKUP;
       u16 new_l0 = 0;
 
       bi0 = from[0];
@@ -351,8 +473,6 @@ srv6_ad_rewrite_fn ( vlib_main_t * vm,
         new_l0 = ip0->payload_length + sizeof(ip6_header_t) + \
           clib_net_to_host_u16(ip0_encap->payload_length);
         ip0->payload_length = clib_host_to_net_u16(new_l0);
-        ip0->ip_version_traffic_class_and_flow_label = \
-          ip0_encap->ip_version_traffic_class_and_flow_label;
       }
 
       if (PREDICT_FALSE (node->flags & VLIB_NODE_FLAG_TRACE) &&
@@ -373,16 +493,16 @@ srv6_ad_rewrite_fn ( vlib_main_t * vm,
   }
 
   /* Update counters */
-  vlib_node_increment_counter (vm, srv6_ad_rewrite_node.index,
+  vlib_node_increment_counter (vm, srv6_ad6_rewrite_node.index,
                                SRV6_AD_REWRITE_COUNTER_PROCESSED, cnt_packets);
 
   return frame->n_vectors;
 }
 
 /* *INDENT-OFF* */
-VLIB_REGISTER_NODE (srv6_ad_rewrite_node) = {
-  .function = srv6_ad_rewrite_fn,
-  .name = "srv6-ad-rewrite",
+VLIB_REGISTER_NODE (srv6_ad6_rewrite_node) = {
+  .function = srv6_ad6_rewrite_fn,
+  .name = "srv6-ad6-rewrite",
   .vector_size = sizeof (u32),
   .format_trace = format_srv6_ad_rewrite_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -390,7 +510,7 @@ VLIB_REGISTER_NODE (srv6_ad_rewrite_node) = {
   .error_strings = srv6_ad_rewrite_counter_strings,
   .n_next_nodes = SRV6_AD_REWRITE_N_NEXT,
   .next_nodes = {
-      [SRV6_AD_REWRITE_NEXT_IP6LOOKUP] = "ip6-lookup",
+      [SRV6_AD_REWRITE_NEXT_LOOKUP] = "ip6-lookup",
       [SRV6_AD_REWRITE_NEXT_ERROR] = "error-drop",
   },
 };

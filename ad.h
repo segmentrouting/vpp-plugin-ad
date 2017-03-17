@@ -24,6 +24,8 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 
+#define DA_IP4 4
+#define DA_IP6 6
 
 typedef struct {
   u16 msg_id_base;                        /**< API message ID base */
@@ -43,9 +45,10 @@ typedef struct {
  * the user instantiates
  */
 typedef struct {
-  ip46_address_t	nh_addr;	              /**< Proxied device address */
+	ip46_address_t	nh_addr;                  /**< Proxied device address */
   u32				sw_if_index_out;	            /**< Outgoing iface to proxied dev. */
   u32				nh_adj;				                /**< Adjacency index for out. iface */
+	u8				ip_version;
 
   u32				sw_if_index_in;		            /**< Incoming iface from proxied dev. */
   u8 *			rewrite;			                /**< Headers to be rewritten */
