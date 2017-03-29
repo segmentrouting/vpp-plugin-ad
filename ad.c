@@ -142,11 +142,9 @@ format_srv6_ad_localsid (u8 * s, va_list * args)
   if (ls_mem->ip_version == DA_IP4)
   {
     return (format (s,
-          "Adj index:\t%u\n"
           "Next-hop:\t%U\n"
           "\tOutgoing iface: %U\n"
           "\tIncoming iface: %U",
-          ls_mem->nh_adj,
           format_ip4_address, &ls_mem->nh_addr.ip4,
           format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_out,
           format_vnet_sw_if_index_name, vnm, ls_mem->sw_if_index_in));
