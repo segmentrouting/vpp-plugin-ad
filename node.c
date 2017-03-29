@@ -360,7 +360,7 @@ srv6_ad4_rewrite_fn ( vlib_main_t * vm,
         ip0_encap->checksum = checksum0;
 
         /* Update outer IPv6 length (in case it has changed) */
-        new_l0 = ip0->payload_length + clib_net_to_host_u16(ip0_encap->length);
+        new_l0 = vec_len(ls0_mem->rewrite) - sizeof(ip6_header_t) + clib_net_to_host_u16(ip0_encap->length);
         ip0->payload_length = clib_host_to_net_u16(new_l0);
       }
 
@@ -470,7 +470,7 @@ srv6_ad6_rewrite_fn ( vlib_main_t * vm,
         ip0 = vlib_buffer_get_current (b0);
 
         ip0_encap->hop_limit -= 1;
-        new_l0 = ip0->payload_length + sizeof(ip6_header_t) + \
+        new_l0 = vec_len(ls0_mem->rewrite) + \
           clib_net_to_host_u16(ip0_encap->payload_length);
         ip0->payload_length = clib_host_to_net_u16(new_l0);
       }
