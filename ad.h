@@ -37,7 +37,8 @@ typedef struct {
 
   u32 srv6_localsid_behavior_id;          /**< SRv6 LocalSID behavior number */
 
-  ip6_sr_localsid_t **sw_iface_localsid;	/**< Retrieve local SID from iface */
+  u32 *         sw_iface_localsid4;       /**< Retrieve local SID from iface */
+  u32 *         sw_iface_localsid6;       /**< Retrieve local SID from iface */
 } srv6_ad_main_t;
 
 /*

@@ -297,6 +297,7 @@ srv6_ad4_rewrite_fn ( vlib_main_t * vm,
     vlib_node_runtime_t * node,
     vlib_frame_t * frame)
 {
+  ip6_sr_main_t * srm = &sr_main;
   srv6_ad_main_t * sm = &srv6_ad_main;
   u32 n_left_from, next_index, * from, * to_next;
   u32 cnt_packets = 0;
@@ -333,10 +334,11 @@ srv6_ad4_rewrite_fn ( vlib_main_t * vm,
 
       b0 = vlib_get_buffer (vm, bi0);
       ip0_encap = vlib_buffer_get_current (b0);
-      ls0 = sm->sw_iface_localsid[vnet_buffer(b0)->sw_if_index[VLIB_RX]];
+      ls0 = pool_elt_at_index (srm->localsids,
+          sm->sw_iface_localsid4[vnet_buffer(b0)->sw_if_index[VLIB_RX]]);
       ls0_mem = ls0->plugin_mem;
 
-      if (PREDICT_FALSE (ls0_mem->rewrite == NULL))
+      if (PREDICT_FALSE (ls0_mem == NULL || ls0_mem->rewrite == NULL))
       {
         next0 = SRV6_AD_REWRITE_NEXT_ERROR;
         b0->error = node->errors[SRV6_AD_REWRITE_COUNTER_NO_RW];
@@ -414,6 +416,7 @@ srv6_ad6_rewrite_fn ( vlib_main_t * vm,
     vlib_node_runtime_t * node,
     vlib_frame_t * frame)
 {
+  ip6_sr_main_t * srm = &sr_main;
   srv6_ad_main_t * sm = &srv6_ad_main;
   u32 n_left_from, next_index, * from, * to_next;
   u32 cnt_packets = 0;
@@ -449,10 +452,11 @@ srv6_ad6_rewrite_fn ( vlib_main_t * vm,
 
       b0 = vlib_get_buffer (vm, bi0);
       ip0 = vlib_buffer_get_current (b0);
-      ls0 = sm->sw_iface_localsid[vnet_buffer(b0)->sw_if_index[VLIB_RX]];
+      ls0 = pool_elt_at_index (srm->localsids,
+          sm->sw_iface_localsid6[vnet_buffer(b0)->sw_if_index[VLIB_RX]]);
       ls0_mem = ls0->plugin_mem;
 
-      if (PREDICT_FALSE (ls0_mem->rewrite == NULL))
+      if (PREDICT_FALSE (ls0_mem == NULL || ls0_mem->rewrite == NULL))
       {
         next0 = SRV6_AD_REWRITE_NEXT_ERROR;
         b0->error = node->errors[SRV6_AD_REWRITE_COUNTER_NO_RW];

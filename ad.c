@@ -38,8 +38,10 @@ unsigned char params_str[] = "<next-hop> <iface-out> <iface-in>";
 static int
 srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
 {
+  ip6_sr_main_t * srm = &sr_main;
   srv6_ad_main_t * sm = &srv6_ad_main;
   srv6_ad_localsid_t *ls_mem = localsid->plugin_mem;
+  u32 localsid_index = localsid - srm->localsids;
 
   /* Step 1: Prepare xconnect adjacency for sending packets to the VNF */
 
@@ -71,25 +73,43 @@ srv6_ad_localsid_creation_fn (ip6_sr_localsid_t *localsid)
 
   int ret = -1;
   if (ls_mem->ip_version == DA_IP4)
+  {
     ret = vnet_feature_enable_disable ("ip4-unicast", "srv6-ad4-rewrite",
         ls_mem->sw_if_index_in, 1, 0, 0);
+    if (ret != 0)
+      return -1;
+
+    /* FIB API calls - Recursive route through the BindingSID */
+    if(ls_mem->sw_if_index_in < vec_len(sm->sw_iface_localsid4))
+    {
+      sm->sw_iface_localsid4[ls_mem->sw_if_index_in] = localsid_index;
+    }
+    else
+    {
+      vec_resize(sm->sw_iface_localsid4,
+          (pool_len(sm->vnet_main->interface_main.sw_interfaces)-
+           vec_len(sm->sw_iface_localsid4)));
+      sm->sw_iface_localsid4[ls_mem->sw_if_index_in] = localsid_index;
+    }
+  }
   else if (ls_mem->ip_version == DA_IP6)
+  {
     ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad6-rewrite",
         ls_mem->sw_if_index_in, 1, 0, 0);
-  if (ret != 0)
-    return -1;
+    if (ret != 0)
+      return -1;
 
-  /* FIB API calls - Recursive route through the BindingSID */
-  if(ls_mem->sw_if_index_in < vec_len(sm->sw_iface_localsid))
-  {
-    sm->sw_iface_localsid[ls_mem->sw_if_index_in] = localsid;
-  }
-  else
-  {
-    vec_resize(sm->sw_iface_localsid,
-        (pool_len(sm->vnet_main->interface_main.sw_interfaces)-
-         vec_len(sm->sw_iface_localsid)));
-    sm->sw_iface_localsid[ls_mem->sw_if_index_in] = localsid;
+    if(ls_mem->sw_if_index_in < vec_len(sm->sw_iface_localsid6))
+    {
+      sm->sw_iface_localsid6[ls_mem->sw_if_index_in] = localsid_index;
+    }
+    else
+    {
+      vec_resize(sm->sw_iface_localsid6,
+          (pool_len(sm->vnet_main->interface_main.sw_interfaces)-
+           vec_len(sm->sw_iface_localsid6)));
+      sm->sw_iface_localsid6[ls_mem->sw_if_index_in] = localsid_index;
+    }
   }
 
   return 0;
@@ -101,19 +121,30 @@ srv6_ad_localsid_removal_fn (ip6_sr_localsid_t *localsid)
   srv6_ad_main_t * sm = &srv6_ad_main;
   srv6_ad_localsid_t *ls_mem = localsid->plugin_mem;
 
-  /* Remove hardware indirection (from sr_steering.c:137) */
   int ret = -1;
   if (ls_mem->ip_version == DA_IP4)
+  {
+    /* Remove hardware indirection (from sr_steering.c:137) */
     ret = vnet_feature_enable_disable ("ip4-unicast", "srv6-ad4-rewrite",
         ls_mem->sw_if_index_in, 0, 0, 0);
+    if (ret != 0)
+      return -1;
+
+    /* Remove local SID pointer from interface table (from sr_steering.c:139) */
+    sm->sw_iface_localsid4[ls_mem->sw_if_index_in] = ~(u32)0;
+  }
   else if (ls_mem->ip_version == DA_IP6)
+  {
+    /* Remove hardware indirection (from sr_steering.c:137) */
     ret = vnet_feature_enable_disable ("ip6-unicast", "srv6-ad6-rewrite",
         ls_mem->sw_if_index_in, 0, 0, 0);
-  if (ret != 0)
-    return -1;
+    if (ret != 0)
+      return -1;
 
-  /* Remove local SID pointer from interface table (from sr_steering.c:139) */
-  sm->sw_iface_localsid[ls_mem->sw_if_index_in] = NULL;
+    /* Remove local SID pointer from interface table (from sr_steering.c:139) */
+    sm->sw_iface_localsid6[ls_mem->sw_if_index_in] = ~(u32)0;
+  }
+
 
   /* Unlock (OIF, NHOP) adjacency (from sr_localsid.c:103) */
   adj_unlock (ls_mem->nh_adj);
