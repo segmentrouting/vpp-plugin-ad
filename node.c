@@ -58,22 +58,9 @@ vlib_node_registration_t srv6_ad6_rewrite_node;
 
 /****************************** Packet counters *******************************/
 
-#define foreach_srv6_ad_localsid_counter \
-_(PROCESSED, "srv6-ad processed packets") \
-_(NO_SRH, "(Error) No SRH.") \
-_(LAST_SID, "(Error) Last SID.") \
-_(NO_INNER_IP, "(Error) No inner IP header.")
-
 #define foreach_srv6_ad_rewrite_counter \
 _(PROCESSED, "srv6-ad rewritten packets") \
 _(NO_RW, "(Error) No header for rewriting.")
-
-typedef enum {
-#define _(sym,str) SRV6_AD_LOCALSID_COUNTER_##sym,
-  foreach_srv6_ad_localsid_counter
-#undef _
-  SRV6_AD_LOCALSID_N_COUNTERS,
-} srv6_ad_localsid_counters;
 
 typedef enum {
 #define _(sym,str) SRV6_AD_REWRITE_COUNTER_##sym,
@@ -81,12 +68,6 @@ typedef enum {
 #undef _
   SRV6_AD_REWRITE_N_COUNTERS,
 } srv6_ad_rewrite_counters;
-
-static char * srv6_ad_localsid_counter_strings[] = {
-#define _(sym,string) string,
-  foreach_srv6_ad_localsid_counter
-#undef _
-};
 
 static char * srv6_ad_rewrite_counter_strings[] = {
 #define _(sym,string) string,
@@ -117,7 +98,7 @@ typedef enum {
  * @brief Function doing SRH processing for AD behavior
  */
 static_always_inline void
-end_ad_processing ( vlib_node_runtime_t * node,
+end_ad_processing (
     vlib_buffer_t * b0,
     ip6_header_t * ip0,
     ip6_sr_header_t * sr0,
@@ -133,13 +114,11 @@ end_ad_processing ( vlib_node_runtime_t * node,
   if(PREDICT_FALSE(ip0->protocol != IP_PROTOCOL_IPV6_ROUTE ||
         sr0->type != ROUTING_HEADER_TYPE_SR))
   {
-    b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_SRH];
     return;
   }
 
   if(PREDICT_FALSE(sr0->segments_left == 0))
   {
-    b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_LAST_SID];
     return;
   }
 
@@ -164,7 +143,6 @@ end_ad_processing ( vlib_node_runtime_t * node,
   /* Make sure next header is IP */
   if (PREDICT_FALSE (next_hdr != IP_PROTOCOL_IPV6 && next_hdr != IP_PROTOCOL_IP_IN_IP))
   {
-    b0->error = node->errors[SRV6_AD_LOCALSID_COUNTER_NO_INNER_IP];
     return;
   }
 
@@ -238,7 +216,7 @@ srv6_ad_localsid_fn ( vlib_main_t * vm,
           vnet_buffer(b0)->ip.adj_index[VLIB_TX]);
 
       /* SRH processing */
-      end_ad_processing (node, b0, ip0, sr0, ls0, &next0);
+      end_ad_processing (b0, ip0, sr0, ls0, &next0);
 
       if (PREDICT_FALSE(b0->flags & VLIB_BUFFER_IS_TRACED))
       {
@@ -262,8 +240,6 @@ srv6_ad_localsid_fn ( vlib_main_t * vm,
     vlib_put_next_frame (vm, node, next_index, n_left_to_next);
   }
 
-  vlib_node_increment_counter (vm, srv6_ad_localsid_node.index,
-                               SRV6_AD_LOCALSID_COUNTER_PROCESSED, cnt_packets);
   return frame->n_vectors;
 }
 
@@ -274,8 +250,6 @@ VLIB_REGISTER_NODE (srv6_ad_localsid_node) = {
   .vector_size = sizeof (u32),
   .format_trace = format_srv6_ad_localsid_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
-  .n_errors = SRV6_AD_LOCALSID_N_COUNTERS,
-  .error_strings = srv6_ad_localsid_counter_strings,
   .n_next_nodes = SRV6_AD_LOCALSID_N_NEXT,
   .next_nodes = {
     [SRV6_AD_LOCALSID_NEXT_REWRITE4] = "ip4-rewrite",
