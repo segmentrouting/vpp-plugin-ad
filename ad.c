@@ -28,9 +28,9 @@
 #include <vlibsocket/api.h>
 
 unsigned char function_name[] = "SRv6-AD-plugin";
-unsigned char keyword_str[] = "END.AD";
+unsigned char keyword_str[] = "End.AD";
 unsigned char def_str[] = "Endpoint with dynamic proxy to SR-unaware appliance";
-unsigned char params_str[] = "<next-hop> <iface-out> <iface-in>";
+unsigned char params_str[] = "nh <next-hop> oif <iface-out> iif <iface-in>";
 
 
 /*****************************************/
@@ -211,7 +211,7 @@ unformat_srv6_ad_localsid (unformat_input_t * input, va_list * args)
   u32 sw_if_index_out;
   u32 sw_if_index_in;
 
-  if (unformat (input, "end.ad %U %U %U",
+  if (unformat (input, "end.ad nh %U oif %U iif %U",
         unformat_ip4_address, &nh_addr.ip4,
         unformat_vnet_sw_interface, vnm, &sw_if_index_out,
         unformat_vnet_sw_interface, vnm, &sw_if_index_in))
@@ -232,7 +232,7 @@ unformat_srv6_ad_localsid (unformat_input_t * input, va_list * args)
     *plugin_mem_p = ls_mem;
     return 1;
   }
-  else if (unformat (input, "end.ad %U %U %U",
+  else if (unformat (input, "end.ad nh %U oif %U iif %U",
         unformat_ip6_address, &nh_addr.ip6,
         unformat_vnet_sw_interface, vnm, &sw_if_index_out,
         unformat_vnet_sw_interface, vnm, &sw_if_index_in))
