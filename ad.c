@@ -23,10 +23,6 @@
 #include <vnet/plugin/plugin.h>
 #include <srv6-ad/ad.h>
 
-#include <vlibapi/api.h>
-#include <vlibmemory/api.h>
-#include <vlibsocket/api.h>
-
 unsigned char function_name[] = "SRv6-AD-plugin";
 unsigned char keyword_str[] = "End.AD";
 unsigned char def_str[] = "Endpoint with dynamic proxy to SR-unaware appliance";
