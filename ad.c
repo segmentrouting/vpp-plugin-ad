@@ -338,4 +338,5 @@ VLIB_INIT_FUNCTION (srv6_ad_init);
 
 VLIB_PLUGIN_REGISTER () = {
   .version = "1.0",
+  .description = "Dynamic SRv6 proxy",
 };
